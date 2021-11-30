@@ -1,4 +1,4 @@
-module nordea2Ynab
+module github.com/flyhard/nordea2ynab
 
 go 1.17
 
