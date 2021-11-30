@@ -4,11 +4,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
-	"nordea2Ynab/decimal"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/flyhard/nordea2ynab/decimal"
 )
 
 const regex = "(?P<Memo>Autogiro|Överföring|Reservation Kortköp|Kortköp \\d+|Swish betalning|Swish återbetalning|Betalning BG \\d+-\\d+).(?P<Payee>.*)"

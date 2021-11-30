@@ -1,8 +1,9 @@
 package main
 
 import (
-	"nordea2Ynab/convert"
 	"os"
+
+	"github.com/flyhard/nordea2ynab/convert"
 )
 
 func main() {
