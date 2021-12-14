@@ -49,6 +49,10 @@ func Convert(filename string) {
 	if err != nil {
 		log.Fatalf("Failed to parse regex %q: %v", regex, err)
 	}
+	reserved, err := regexp.Compile("Reservation Kortköp")
+	if err != nil {
+		log.Fatalf("Failed to parse regex: %v", err)
+	}
 	for i, record := range records {
 		if i == 0 {
 			continue
@@ -61,6 +65,9 @@ func Convert(filename string) {
 			submatch := re.FindStringSubmatch(memo)
 			payee = submatch[re.SubexpIndex("Payee")]
 			memo = submatch[re.SubexpIndex("Memo")]
+		}
+		if reserved.MatchString(memo) {
+			continue
 		}
 		amtText := strings.TrimSpace(record[1])
 		money, err := decimal.NewFromString(amtText)
