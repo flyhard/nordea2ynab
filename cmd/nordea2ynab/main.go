@@ -11,7 +11,7 @@ func main() {
 		if i == 0 {
 			continue
 		}
-		convert.Convert(arg)
+		convert.ConvertCsv(arg)
 	}
 
 }
