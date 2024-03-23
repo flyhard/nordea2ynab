@@ -1,8 +1,12 @@
 package convert
 
 import (
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"github.com/flyhard/nordea2ynab/csvTypes"
+	"github.com/flyhard/nordea2ynab/nordeaCsvReader"
+	"github.com/flyhard/nordea2ynab/ynabCsvWriter"
+	"github.com/gocarina/gocsv"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,21 +19,15 @@ import (
 const regex = "(?P<Memo>Autogiro|Överföring|Reservation Kortköp|Kortköp \\d+|Swish betalning|Swish återbetalning|Betalning BG \\d+-\\d+).(?P<Payee>.*)"
 
 func Convert(filename string) error {
-	file, err := os.Open(filename)
+	nordeaTransactions, err := nordeaCsvReader.ReadNordeaTransactionsFromFile(filename)
 	if err != nil {
-		return fmt.Errorf("failed to open file %q: %w", filename, err)
+		return err
+	}
+	re, err := regexp.Compile(regex)
+	if err != nil {
+		return fmt.Errorf("failed to parse regex %q: %w", regex, err)
 	}
 
-	r := csv.NewReader(file)
-	r.Comma = ';'
-	r.FieldsPerRecord = -1
-	records, err := r.ReadAll()
-	if err != nil {
-		return fmt.Errorf("failed to read file %q: %w", file.Name(), err)
-	}
-	for _, record := range records {
-		fmt.Println(record)
-	}
 	w := new(strings.Builder)
 	ext := filepath.Ext(filename)
 	name := strings.TrimRight(filename, ext)
@@ -41,50 +39,39 @@ func Convert(filename string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open out file %q: %w", outFileName, err)
 	}
-	out := csv.NewWriter(outFile)
-	err = out.Write([]string{"Date", "Payee", "Memo", "Outflow", "Inflow"})
-	if err != nil {
-		return fmt.Errorf("cannot write: %w", err)
-	}
-	re, err := regexp.Compile(regex)
-	if err != nil {
-		return fmt.Errorf("failed to parse regex %q: %w", regex, err)
-	}
-	reserved, err := regexp.Compile("Reservation Kortköp")
-	if err != nil {
-		return fmt.Errorf("failed to parse regex: %w", err)
-	}
-	for i, record := range records {
-		if i == 0 {
+
+	ynabRecords := &[]ynabCsvWriter.YnabRecord{}
+	for _, record := range *nordeaTransactions {
+		if record.BookingDate.IsReserved {
 			continue
 		}
-		err := handleLoop(record, out, re, reserved)
+		ynabRecord, err := handleLoop(record, re)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to handle row: %w", err)
 		}
+		*ynabRecords = append(*ynabRecords, *ynabRecord)
 	}
-	out.Flush()
+	err = gocsv.Marshal(ynabRecords, outFile)
+	if err != nil {
+		return fmt.Errorf("failed to write csv file %v: %w", outFile.Name(), err)
+	}
 	fmt.Println(w.String())
 	return nil
 }
 
-func handleLoop(record []string, out *csv.Writer, re *regexp.Regexp, reserved *regexp.Regexp) error {
-	date := strings.TrimSpace(record[0])
+func handleLoop(record nordeaCsvReader.NordeaTransaction, re *regexp.Regexp) (*ynabCsvWriter.YnabRecord, error) {
 	payee := ""
-	memo := strings.TrimSpace(record[5])
+	memo := strings.TrimSpace(record.Category)
 
 	if re.MatchString(memo) {
 		submatch := re.FindStringSubmatch(memo)
 		payee = submatch[re.SubexpIndex("Payee")]
 		memo = submatch[re.SubexpIndex("Memo")]
 	}
-	if reserved.MatchString(memo) {
-		return nil
-	}
-	amtText := strings.TrimSpace(record[1])
+	amtText := strings.TrimSpace(record.Amount)
 	money, err := decimal.NewFromString(amtText)
 	if err != nil {
-		return fmt.Errorf("failed to parse %q: %w", record, err)
+		return nil, fmt.Errorf("failed to parse %v: %w", record, err)
 	}
 	outflow := "0"
 	inflow := "0"
@@ -93,10 +80,15 @@ func handleLoop(record []string, out *csv.Writer, re *regexp.Regexp, reserved *r
 	} else {
 		inflow = fmt.Sprintf("%.2f", money.Absolute().AsMajorUnits())
 	}
-	outRec := []string{date, payee, memo, outflow, inflow}
-	log.Println(outRec)
-	if out.Write(outRec) != nil {
-		return fmt.Errorf("failed to write: %w", err)
+	ynabRecord := ynabCsvWriter.YnabRecord{
+		Date:    csvTypes.DateTime{Time: record.BookingDate.Time},
+		Payee:   payee,
+		Memo:    memo,
+		Outflow: outflow,
+		Inflow:  inflow,
 	}
-	return nil
+	marshal, _ := json.Marshal(ynabRecord)
+	fmt.Printf("%v\n", string(marshal))
+
+	return &ynabRecord, nil
 }
