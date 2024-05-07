@@ -1,6 +1,6 @@
 module github.com/flyhard/nordea2ynab
 
-go 1.21
+go 1.21.1
 
 require (
 	github.com/Rhymond/go-money v1.0.12
